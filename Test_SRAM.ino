@@ -8,12 +8,20 @@ const byte SRAM_WRITE = 0X02;
 // pins used for the connection with the sensor
 // the other you need are controlled by the SPI library):
 
+int audioInput = A0;
+int audioOutput = 6;  //5 and 6 pwm have higher frequency! 
+int sample = 0;
+int delayTime = 120;
+int output;
 const int chipSelectPin = 7;
 byte i = 0x01;
-byte addr = 0x01;
+unsigned long addr = 0x00000000;
+
 
 
 void setup() {
+  // faster pwm!
+  TCCR0B = TCCR0B & 0b11111000 | 0x01;
   Serial.begin(9600);
 
   // start the SPI library:
@@ -49,37 +57,49 @@ void setup() {
 
 
 void loop() {
+  // sample audio signal
+  sample = analogRead(audioInput);
+  // shoft 2 bits to make it fit in a 8 bit memory slot.
+  sample = (sample >> 2) * 0.9;
+  // save to ram
+  saveByte(addr, sample);
+  output = loadByte((addr)%16777216) * 0.3 +
+           loadByte((addr - 100)%16777216) * 0.3 + 
+           loadByte((addr - 200)%16777216) * 0.3;
+  analogWrite(audioOutput, output);
+  addr++;
+  delay(1);
+  if(addr == 16777216) {
+    addr = 0;
+    Serial.println("r");
+  }
+  
+  /*
   Serial.print("address: ");
   Serial.println(addr);
-  Serial.print("Load: ");
-  Serial.println(loadByte(addr));
+  Serial.print("Sample: ");
+  Serial.println(sample);
+  */
   
-  delay(300);
   
-  Serial.print("Savei: ");
-  Serial.println(saveByte(addr, i++));
-  
-  addr+= 5;
 }
 
 
 
-unsigned int loadByte(byte address)
+unsigned int loadByte(unsigned long address)
 {
   unsigned int answer = 0;
-  
-  byte bufferMsg[5] = {SRAM_READ, 0x00, 0x00, 0x01, 0xff};
-  
+
   // Enable SRAM
   digitalWrite(chipSelectPin, LOW);
 
-  // Sent the message!
+  // Send the message!
   SPI.transfer(SRAM_READ);
-  SPI.transfer(0x00);
-  SPI.transfer(0x00);
-  SPI.transfer(address);
+  SPI.transfer((address >> 8) & 0xff);
+  SPI.transfer((address >> 4) & 0xff);
+  SPI.transfer(address & 0xff);
   answer = SPI.transfer(0xff);
-  delay(50);
+  //delay(50);
   // Disable SRAM
   digitalWrite(chipSelectPin, HIGH);
   
@@ -88,23 +108,19 @@ unsigned int loadByte(byte address)
 
 
 
-byte saveByte(byte address, byte data)
+byte saveByte(unsigned long address, byte data)
 {
-  
-  byte bufferMsg[5] = {SRAM_WRITE, 0x00, 0x00, 0x01, data};
-
   
   // Enable SRAM
   digitalWrite(chipSelectPin, LOW);
 
-
-  // Sent the message!
+  // Send the message!
   SPI.transfer(SRAM_WRITE);
-  SPI.transfer(0x00);
-  SPI.transfer(0x00);
-  SPI.transfer(address);
+  SPI.transfer((address >> 8) & 0xff);
+  SPI.transfer((address >> 4) & 0xff);
+  SPI.transfer(address & 0xff);
   SPI.transfer(data);
-  delay(50);
+  //delay(50);
   // Disable SRAM
   digitalWrite(chipSelectPin, HIGH);
   
